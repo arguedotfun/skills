@@ -37,3 +37,22 @@ jobs:
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
             --generate-notes
+
+      - name: Setup Node.js
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Publish to ClawdHub
+        if: steps.check.outputs.exists == 'false'
+        env:
+          CLAWDHUB_TOKEN: ${{ secrets.CLAWDHUB_TOKEN }}
+        run: |
+          npm install -g clawdhub
+          clawhub publish . \
+            --slug arguedotfun \
+            --name "arguedotfun" \
+            --version "${{ steps.version.outputs.version }}" \
+            --tags latest \
+            --changelog "https://github.com/arguedotfun/skills/releases/tag/${{ steps.version.outputs.tag }}"
