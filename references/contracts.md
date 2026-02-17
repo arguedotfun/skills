@@ -325,7 +325,7 @@ STATEMENT="Your debate question here"
 DESCRIPTION="Context and evaluation criteria for the GenLayer validators."
 SIDE_A="Side A label"
 SIDE_B="Side B label"
-END_DATE=$(($(date +%s) + 604800))  # 7 days from now
+END_DATE=$(($(date +%s) + 21600))  # 6 hours from now (minimum)
 
 CALLDATA=$(cast calldata "createDebate(string,string,string,string,uint256)" \
   "$STATEMENT" "$DESCRIPTION" "$SIDE_A" "$SIDE_B" $END_DATE)
