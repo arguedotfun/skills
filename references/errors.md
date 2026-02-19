@@ -52,6 +52,7 @@ Common errors, their meanings, and recovery strategies. See [skill.md](https://a
 | `Already claimed` | You already claimed from this debate |
 | `No bet to claim` | You have no bet on this debate |
 | `No bet on winning side` | Your bet was on the losing side |
+| `Max 100 debates` | `batchStatus()` called with more than 100 debate addresses. Split into multiple calls. |
 
 ### Error Recovery
 

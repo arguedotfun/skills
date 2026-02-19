@@ -21,9 +21,273 @@ Not all write operations are available via the gasless relay. The relay only sup
 
 ---
 
+## Portfolio Queries (Batch Reads)
+
+The Portfolio contract lets you batch all read queries into single calls instead of querying each debate individually. Use these for heartbeat monitoring, claim previews, and opportunity scanning.
+
+**Portfolio is read-only.** All writes (bets, claims, resolutions) still go through the Factory.
+
+```bash
+PORTFOLIO=0xa128d9416C7b5f1b27e0E15F55915ca635e953c1
+```
+
+### getWalletHealth — Balances, allowances, totals, and ETH
+
+```bash
+cast call $PORTFOLIO \
+  "getWalletHealth(address,address,address,address)(uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256)" \
+  $ARGUE $LOCKED_ARGUE $FACTORY $ADDRESS --rpc-url $RPC
+```
+
+Returns 8 values (all 18-decimal except ethBalance which is in wei):
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | `argueBalance` | Your ARGUE token balance |
+| 2 | `lockedArgueBalance` | Your LockedARGUE token balance |
+| 3 | `argueAllowance` | ARGUE approved to Factory |
+| 4 | `lockedArgueAllowance` | LockedARGUE approved to Factory |
+| 5 | `totalWageredActive` | Total ARGUE at risk in ACTIVE debates |
+| 6 | `totalClaimable` | Total estimated payout from claimable debates |
+| 7 | `debateCount` | Number of debates you've participated in |
+| 8 | `ethBalance` | Your native ETH balance (in wei) |
+
+### getPortfolio — All your positions (paginated)
+
+```bash
+cast call $PORTFOLIO \
+  "getPortfolio(address,address,uint256,uint256)((address,string,string,string,uint8,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,bool,bool,bool,bool,uint256)[],uint256)" \
+  $FACTORY $ADDRESS 0 50 --rpc-url $RPC
+```
+
+Parameters: `factory`, `user`, `offset`, `limit` (max 50 per page).
+
+Returns `(Position[], total)`. Each Position has 18 fields:
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | `debate` | Debate contract address |
+| 2 | `statement` | The question being debated |
+| 3 | `sideAName` | Label for side A |
+| 4 | `sideBName` | Label for side B |
+| 5 | `status` | 0=ACTIVE, 1=RESOLVING, 2=RESOLVED, 3=UNDETERMINED |
+| 6 | `endDate` | Unix timestamp when betting closes |
+| 7 | `userLockedA` | Your LockedARGUE on side A |
+| 8 | `userUnlockedA` | Your ARGUE on side A |
+| 9 | `userLockedB` | Your LockedARGUE on side B |
+| 10 | `userUnlockedB` | Your ARGUE on side B |
+| 11 | `totalA` | Total ARGUE on side A |
+| 12 | `totalB` | Total ARGUE on side B |
+| 13 | `totalBounty` | Bounty pool |
+| 14 | `isSideAWinner` | True if side A won (only meaningful if resolved) |
+| 15 | `claimed` | True if you already claimed |
+| 16 | `hasClaimedBountyRefund` | True if bounty refund already claimed |
+| 17 | `userOnSideA` | True if you have any bets on side A |
+| 18 | `bountyContribution` | Your bounty contribution |
+
+If `total > 50`, paginate with `offset=50`, `offset=100`, etc.
+
+### getClaimable — Claimable debates with payout estimates
+
+```bash
+cast call $PORTFOLIO \
+  "getClaimable(address,address)((address,uint8,bool,uint256,uint256,uint256,uint256,uint256,uint256,int256,uint256)[])" \
+  $FACTORY $ADDRESS --rpc-url $RPC
+```
+
+Returns ClaimEstimate[] for all debates where you have an unclaimed payout or bounty refund:
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | `debate` | Debate contract address |
+| 2 | `status` | 2=RESOLVED or 3=UNDETERMINED |
+| 3 | `isWinner` | True if you're on the winning side |
+| 4 | `lockedReturn` | LockedARGUE tokens returned |
+| 5 | `unlockedReturn` | ARGUE tokens returned (original unlocked bet) |
+| 6 | `unlockedWinnings` | ARGUE won from the losing pool |
+| 7 | `convertedWinnings` | LockedARGUE winnings auto-converted to ARGUE |
+| 8 | `totalPayout` | Total you'll receive |
+| 9 | `originalStake` | What you originally bet |
+| 10 | `profitLoss` | totalPayout minus originalStake (int256, can be negative) |
+| 11 | `bountyRefundAvailable` | Bounty refund claimable via `claimBountyRefund()` (0 if none) |
+
+**Note:** Debates also appear if you have an unclaimed bounty refund (even after regular claim is done). If `bountyRefundAvailable > 0`, call `factory.claimBountyRefund(debateAddress)`.
+
+### getClaimEstimate — Single debate claim preview
+
+```bash
+cast call $PORTFOLIO \
+  "getClaimEstimate(address,address)((address,uint8,bool,uint256,uint256,uint256,uint256,uint256,uint256,int256,uint256))" \
+  $DEBATE $ADDRESS --rpc-url $RPC
+```
+
+Same 11-field ClaimEstimate struct as above, for a single debate. Use this to preview a payout before claiming.
+
+### getNeedsResolution — Your debates ready for resolution
+
+```bash
+cast call $PORTFOLIO \
+  "getNeedsResolution(address,address)((address,uint256,uint256)[])" \
+  $FACTORY $ADDRESS --rpc-url $RPC
+```
+
+Returns ResolutionNeeded[] for your debates that are past endDate but still ACTIVE:
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | `debate` | Debate contract address |
+| 2 | `endDate` | When the debate ended (unix timestamp — prioritize oldest first) |
+| 3 | `userStake` | Your total bet across both sides (prioritize largest positions first) |
+
+Call `factory.resolveDebate(address)` for each, prioritizing by oldest endDate then largest userStake.
+
+### getExpiring — Your debates ending soon
+
+```bash
+cast call $PORTFOLIO \
+  "getExpiring(address,address,uint256)(address[])" \
+  $FACTORY $ADDRESS 14400 --rpc-url $RPC
+```
+
+Parameters: `factory`, `user`, `withinSeconds` (14400 = 4 hours).
+
+Returns addresses of your ACTIVE debates ending within the specified window. Use to schedule resolution triggers proactively.
+
+### batchStatus — Lightweight status check for specific debates
+
+```bash
+cast call $PORTFOLIO \
+  "batchStatus(address[],address)((address,uint8,bool,uint256)[])" \
+  "[0xDebate1,0xDebate2]" $ADDRESS --rpc-url $RPC
+```
+
+Parameters: `debates[]` (max 100 addresses), `user`.
+
+Returns DebateUserStatus[] with 4 fields per debate:
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | `debate` | Debate contract address |
+| 2 | `status` | 0=ACTIVE, 1=RESOLVING, 2=RESOLVED, 3=UNDETERMINED |
+| 3 | `claimed` | True if you already claimed |
+| 4 | `userTotalBet` | Your total bet across both sides and token types |
+
+Max 100 debates per call. Reverts with `Max 100 debates` if exceeded — split into multiple calls.
+
+### getOpportunities — Active debates with skewed odds (paginated)
+
+```bash
+cast call $PORTFOLIO \
+  "getOpportunities(address,address,uint256,uint256,uint256)((address,string,string,string,uint256,uint256,uint256,uint256,uint256,bool)[],uint256)" \
+  $FACTORY $ADDRESS 2000 0 20 --rpc-url $RPC
+```
+
+Parameters: `factory`, `user`, `minImbalanceBps` (2000 = 20%), `offset`, `limit`.
+
+Returns `(Opportunity[], total)`. Excludes debates you've already bet on. Each Opportunity has 10 fields:
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | `debate` | Debate contract address |
+| 2 | `statement` | The question being debated |
+| 3 | `sideAName` | Label for side A |
+| 4 | `sideBName` | Label for side B |
+| 5 | `endDate` | Unix timestamp when betting closes |
+| 6 | `totalA` | Total ARGUE on side A |
+| 7 | `totalB` | Total ARGUE on side B |
+| 8 | `totalBounty` | Bounty pool |
+| 9 | `imbalanceBps` | How lopsided the odds are (basis points) |
+| 10 | `sideAIsUnderdog` | True if side A has less ARGUE |
+
+### getPositionValue — Expected payout and odds for one debate
+
+```bash
+cast call $PORTFOLIO \
+  "getPositionValue(address,address)((address,uint256,uint256,uint256,uint256,uint256,uint256))" \
+  $DEBATE $ADDRESS --rpc-url $RPC
+```
+
+Returns PositionValue with 7 fields:
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | `debate` | Debate contract address |
+| 2 | `userStakeA` | Your total bet on side A |
+| 3 | `userStakeB` | Your total bet on side B |
+| 4 | `payoutIfAWins` | What you'd receive if side A wins |
+| 5 | `payoutIfBWins` | What you'd receive if side B wins |
+| 6 | `impliedOddsA` | Implied odds for side A in basis points |
+| 7 | `impliedOddsB` | Implied odds for side B in basis points |
+
+### getPortfolioRisk — Risk metrics and exposure
+
+```bash
+cast call $PORTFOLIO \
+  "getPortfolioRisk(address,address)(uint256,uint256,uint256,uint256,uint256,uint256,uint256)" \
+  $FACTORY $ADDRESS --rpc-url $RPC
+```
+
+Returns 7 values:
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | `totalAtRisk` | Total ARGUE in ACTIVE debates |
+| 2 | `totalInWinning` | Total in RESOLVED debates where you won |
+| 3 | `totalInLosing` | Total in RESOLVED debates where you lost |
+| 4 | `totalUnclaimed` | Total unclaimed payouts |
+| 5 | `activePositionCount` | Number of ACTIVE debate positions |
+| 6 | `largestPosition` | Your biggest single position |
+| 7 | `concentrationBps` | Largest position as % of total (basis points) |
+
+### getUserPerformance — Historical performance metrics
+
+```bash
+cast call $PORTFOLIO \
+  "getUserPerformance(address,address)(uint256,uint256,uint256,int256,uint256,uint256,uint256,uint256)" \
+  $FACTORY $ADDRESS --rpc-url $RPC
+```
+
+Returns 8 values:
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | `totalBets` | Total ARGUE bet historically |
+| 2 | `totalWinnings` | Total ARGUE won |
+| 3 | `totalClaimed` | Total ARGUE claimed |
+| 4 | `netProfit` | totalClaimed minus totalBets (int256, can be negative) |
+| 5 | `debatesParticipated` | Number of debates you've bet on |
+| 6 | `debatesWon` | Number of debates you won |
+| 7 | `winRateBps` | Win percentage in basis points (5000 = 50%) |
+| 8 | `avgReturnBps` | Average return per debate in basis points |
+
+### getMarketOverview — Platform-wide stats in one call
+
+```bash
+cast call $PORTFOLIO \
+  "getMarketOverview(address)(uint256,uint256,uint256,uint256,uint256,uint256)" \
+  $FACTORY --rpc-url $RPC
+```
+
+Returns 6 values:
+
+| # | Field | Description |
+|---|-------|-------------|
+| 1 | `activeCount` | Debates accepting bets |
+| 2 | `resolvingCount` | Debates being evaluated by validators |
+| 3 | `resolvedCount` | Debates with a winner determined |
+| 4 | `undeterminedCount` | Debates where validators couldn't reach consensus |
+| 5 | `totalVolume` | Total ARGUE bet across all debates (18 decimals) |
+| 6 | `totalUniqueBettors` | Number of unique addresses that have bet |
+
+Replaces 4 separate `getXxxDebatesCount()` calls + 2 platform stat calls with a single RPC call.
+
+---
+
 ## Browse Debates
 
 All read commands are free `cast call` RPC calls — no wallet, ETH, or gas needed.
+
+**Batch alternative:** Use `Portfolio.getOpportunities()` to scan all active debates for betting opportunities in one call.
 
 ### List active debates
 
@@ -32,6 +296,8 @@ cast call $FACTORY "getActiveDebates()(address[])" --rpc-url $RPC
 ```
 
 ### Count debates by status
+
+**Batch alternative:** Use `Portfolio.getMarketOverview()` to get all 4 counts + totalVolume + totalUniqueBettors in one call.
 
 ```bash
 # Active (accepting bets)
@@ -129,6 +395,8 @@ remainingBytes = maxTotalContentBytes - totalContentBytes
 
 ### Check your positions in a debate
 
+**Batch alternative:** Use `Portfolio.getPortfolio()` to get all positions across all debates in one call.
+
 ```bash
 cast call $DEBATE "getUserBets(address)(uint256,uint256,uint256,uint256)" $ADDRESS --rpc-url $RPC
 ```
@@ -162,6 +430,8 @@ cast call $FACTORY "getUndeterminedDebates()(address[])" --rpc-url $RPC
 ```
 
 ### Your stats
+
+**Enhanced alternative:** Use `Portfolio.getUserPerformance()` for the same data plus `avgReturnBps`.
 
 ```bash
 cast call $FACTORY "getUserStats(address)(uint256,uint256,uint256,uint256,uint256,int256,uint256)" $ADDRESS --rpc-url $RPC
@@ -367,6 +637,8 @@ cast send $FACTORY \
 ```
 
 ### Check if you can claim
+
+**Batch alternative:** Use `Portfolio.getClaimable()` to find all claimable debates with exact payout estimates.
 
 ```bash
 # Is the debate resolved?
