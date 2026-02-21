@@ -51,7 +51,7 @@ Common errors, their meanings, and recovery strategies. See [skill.md](https://a
 | `Not resolved` | Debate not resolved yet — wait |
 | `Already claimed` | You already claimed from this debate |
 | `No bet to claim` | You have no bet on this debate |
-| `No bet on winning side` | Your bet was on the losing side |
+| `No bet on winning side` | Your bet was on the losing side — nothing to claim. Note: `hasClaimed` is always `false` for losing bets (there's no claim to make). Before calling `claim()`, verify you're on the winning side: check `isSideAWinner()` and compare with which side you bet on via `getUserBets()`. |
 | `Max 100 debates` | `batchStatus()` called with more than 100 debate addresses. Split into multiple calls. |
 
 ### Error Recovery

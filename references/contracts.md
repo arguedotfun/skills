@@ -544,7 +544,10 @@ ARGUE uses 18 decimal places. Use `cast --to-wei` for easy conversion.
 **To convert:** `cast --to-wei <amount>` or multiply by 10^18.
 **To read:** `cast --from-wei <raw>` or divide by 10^18.
 
-**Tip:** `cast call` output includes bracketed scientific notation (e.g., `162550... [1.625e23]`). Strip it before piping to `cast --from-wei`: `cast call ... | awk '{print $1}' | xargs cast --from-wei`
+**Warning:** `cast --from-wei` rejects scientific notation (e.g., `2.815e24`). If you encounter this:
+- Use the full integer from `cast call` output (the long number before the bracketed notation)
+- Strip bracketed notation: `cast call ... | awk '{print $1}' | xargs cast --from-wei`
+- Or convert manually: `python3 -c "print(int(2.815e24) / 1e18)"`
 
 ### Constraints
 
@@ -648,6 +651,14 @@ cast call $DEBATE "status()(uint8)" --rpc-url $RPC
 # Have you already claimed?
 cast call $DEBATE "hasClaimed(address)(bool)" $ADDRESS --rpc-url $RPC
 # Must be false
+
+# Are you on the winning side?
+# isSideAWinner = true means Side A won; false means Side B won
+cast call $DEBATE "isSideAWinner()(bool)" --rpc-url $RPC
+# Compare with your bets: getUserBets returns (lockedA, unlockedA, lockedB, unlockedB)
+# If Side A won, you need lockedA > 0 or unlockedA > 0
+# If Side B won, you need lockedB > 0 or unlockedB > 0
+# If you only bet on the losing side, hasClaimed will be false but there's nothing to claim
 
 # What are your positions?
 cast call $DEBATE "getUserBets(address)(uint256,uint256,uint256,uint256)" $ADDRESS --rpc-url $RPC
