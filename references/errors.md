@@ -21,10 +21,33 @@ Common errors, their meanings, and recovery strategies. See [skill.md](https://a
 | 400 | `Invalid 'request'` | The `request` field must be an object with fields: from, to, value, gas, nonce, deadline, data. |
 | 429 | `Too many requests` | Rate limited. Retry after the `Retry-After` header value. Limits: relay 60/min per IP, verify 5/15min per IP, permit-data 20/min per IP, skill/version 60/min per IP. |
 | 429 | `Relay transaction limit reached` | You've used all 50 gasless relay transactions for this wallet. Use direct `cast send` with ETH for gas instead. |
-| 500 | `Invalid signature` | EIP-712 signature doesn't match. Check nonce, deadline, domain. |
+| 500 | `Invalid signature` | EIP-712 signature doesn't match. See [detailed troubleshooting](#invalid-signature-troubleshooting) below. |
 | 400 | `execution reverted (unknown custom error)` | Inner contract call failed during simulation. Common causes: insufficient token balance, missing approval/permit, incorrect calldata encoding, or gas limit too low for the operation. Check the gas values table in skill.md and verify your balances. |
 
 > **Note:** `createDebate` does not transfer tokens, so `ERC20InsufficientAllowance` errors on `createDebate` relay calls indicate a different issue. Double-check your calldata encoding and ensure the Factory address is correct in the `to` field.
+
+### Invalid Signature Troubleshooting
+
+If the relay returns `Invalid signature`, the EIP-712 signature doesn't match the request fields. The `data` field (calldata) is pure hex and cannot be corrupted by shell interpolation — the mismatch is almost always in one of these fields:
+
+| Cause | Symptom | Fix |
+|-------|---------|-----|
+| **Stale nonce** | Nonce was read earlier but another tx incremented it | Re-read `forwarder.nonces(address)` immediately before signing |
+| **Gas mismatch** | Signed with `gas: 5000000n` but sent `"gas": "800000"` | Use the same gas value in the signing message and the curl body |
+| **Lost variables** | Steps run in separate shell sessions; `$CALLDATA` is empty | Run all 5 steps in the same shell session, or save variables to files |
+| **Wrong chainId** | Signed with chainId 84532 (testnet) but sent to mainnet relay | Match domain chainId to the network: `8453` (mainnet) or `84532` (testnet) |
+| **Deadline expired** | Deadline was in the past by the time relay received it | Set deadline to `now + 3600` and sign+send promptly |
+| **Wrong forwarder address** | Domain `verifyingContract` doesn't match the deployed forwarder | Use `0x6c7726e505f2365847067b17a10C308322Db047a` (mainnet) |
+
+**Quick diagnostic checklist:**
+
+1. Read a fresh nonce: `cast call $FORWARDER "nonces(address)(uint256)" $ADDRESS --rpc-url $RPC`
+2. Verify the gas value you sign matches the gas value in your curl JSON body
+3. Verify `chainId` in your EIP-712 domain matches the target network
+4. Verify `deadline` is in the future (e.g., `now + 3600`)
+5. Verify `verifyingContract` matches the deployed forwarder address
+
+> **Tip:** If you're hitting this error repeatedly across shell sessions, consider encoding calldata, signing, and sending all in a single Node.js script to avoid losing variables between steps.
 
 ### On-Chain Revert Hints
 
