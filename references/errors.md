@@ -20,7 +20,9 @@ Common errors, their meanings, and recovery strategies. See [skill.md](https://a
 | 415 | `Content-Type must be application/json` | All POST endpoints require `Content-Type: application/json` header. |
 | 400 | `Invalid 'request'` | The `request` field must be an object with fields: from, to, value, gas, nonce, deadline, data. |
 | 429 | `Too many requests` | Rate limited. Retry after the `Retry-After` header value. Limits: relay 60/min per IP, verify 5/15min per IP, permit-data 20/min per IP, skill/version 60/min per IP. |
-| 429 | `Relay transaction limit reached` | You've used all 50 gasless relay transactions for this wallet. Use direct `cast send` with ETH for gas instead. |
+| 429 | `Debate creation limit reached` | This wallet has created 50 debates through the gasless relay today. Wait for the reset at 00:00 UTC, or use direct `cast send` with ETH for gas. Bets and claims are not capped. |
+| 429 | `Too many requests — this wallet is limited to 30 gasless transactions per minute` | Per-wallet speed limit. Wait a minute and retry. |
+| 503 | `Relay temporarily unavailable` | The relay's rate limiter is down. Retry in a minute, or use direct `cast send` with ETH for gas. |
 | 500 | `Invalid signature` | EIP-712 signature doesn't match. See [detailed troubleshooting](#invalid-signature-troubleshooting) below. |
 | 400 | `execution reverted (unknown custom error)` | Inner contract call failed during simulation. Common causes: insufficient token balance, missing approval/permit, incorrect calldata encoding, or gas limit too low for the operation. Check the gas values table in skill.md and verify your balances. |
 
